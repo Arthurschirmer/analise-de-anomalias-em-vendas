@@ -1,0 +1,59 @@
+# Palette and typography adapted from the Streamlit financial dashboard theme.
+[theme]
+base = "dark"
+primaryColor = "#6357D9"
+backgroundColor = "#0D121C"
+secondaryBackgroundColor = "#161F2F"
+textColor = "#EDF1F7"
+linkColor = "#B7ADFF"
+borderColor = "#2A3549"
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700&display=swap"
+codeFont = "monospace"
+baseFontSize = 15
+baseFontWeight = 400
+headingFontSizes = ["2.1rem", "1.65rem", "1.25rem", "1.1rem", "1rem", "0.875rem"]
+headingFontWeights = [700, 650, 600, 600, 600, 600]
+baseRadius = "0.85rem"
+buttonRadius = "0.65rem"
+showWidgetBorder = true
+showSidebarBorder = true
+linkUnderline = false
+
+[theme.light]
+primaryColor = "#6357D9"
+backgroundColor = "#F8F9FC"
+secondaryBackgroundColor = "#EDF0F6"
+textColor = "#202B40"
+linkColor = "#5847C8"
+borderColor = "#DBE2EE"
+codeBackgroundColor = "#EDF0F6"
+dataframeHeaderBackgroundColor = "#E8EDF5"
+dataframeBorderColor = "#DBE2EE"
+chartCategoricalColors = ["#0F8B7E", "#6357D9", "#C85E53", "#3871BF", "#C28A28", "#8D609F"]
+
+[theme.light.sidebar]
+backgroundColor = "#F0F3F9"
+secondaryBackgroundColor = "#E5EAF3"
+textColor = "#202B40"
+borderColor = "#DBE2EE"
+primaryColor = "#6357D9"
+
+[theme.dark]
+primaryColor = "#6357D9"
+backgroundColor = "#0D121C"
+secondaryBackgroundColor = "#161F2F"
+textColor = "#EDF1F7"
+linkColor = "#B7ADFF"
+borderColor = "#2A3549"
+codeBackgroundColor = "#111A29"
+dataframeHeaderBackgroundColor = "#1C293D"
+dataframeBorderColor = "#2A3549"
+chartCategoricalColors = ["#36C5B2", "#AB9CFF", "#F39085", "#83AFF0", "#F3BB65", "#CFA0DA"]
+
+[theme.dark.sidebar]
+backgroundColor = "#101723"
+secondaryBackgroundColor = "#1A2638"
+textColor = "#EDF1F7"
+borderColor = "#2A3549"
+primaryColor = "#6357D9"

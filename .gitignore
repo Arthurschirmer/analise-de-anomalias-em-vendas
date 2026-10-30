@@ -1,0 +1,46 @@
+# Ambiente Python e arquivos temporários
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Configurações locais e credenciais
+.env
+.env.*
+!.env.example
+.streamlit/secrets.toml
+
+# Bases obtidas localmente e resultados gerados
+data/olist_raw/
+data/olist_padronizado.csv
+outputs/
+
+# Entregas e cópias locais do TCC
+entregas/
+/TCC*.pdf
+/TCC*.zip
+/tcc_overleaf/
+/tcc_capitulo1/
+/tcc_capitulo1_revisao_linguagem/
+
+# Arquivos gerados na compilação do LaTeX
+**/.build/
+*.aux
+*.bcf
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.run.xml
+*.synctex.gz
+*.toc
+
+# Arquivos do sistema
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "queda_notebook_agosto",
+    "csv": "data/vendas_demo.csv",
+    "anomalia": "O faturamento caiu significativamente em agosto em comparacao com julho.",
+    "expected_cause": {
+      "dimensao": "produto",
+      "valor": "Notebook"
+    },
+    "expected_terms": ["Notebook", "Eletronicos"]
+  },
+  {
+    "id": "queda_regiao_sul_setembro",
+    "csv": "data/vendas_queda_regiao_sul.csv",
+    "anomalia": "O faturamento caiu significativamente em setembro em comparacao com agosto.",
+    "expected_cause": {
+      "dimensao": "regiao",
+      "valor": "Sul"
+    },
+    "expected_terms": ["Sul", "Ana"]
+  },
+  {
+    "id": "aumento_desconto_outubro",
+    "csv": "data/vendas_aumento_desconto.csv",
+    "anomalia": "O faturamento caiu significativamente em outubro em comparacao com setembro.",
+    "expected_cause": {
+      "dimensao": "produto",
+      "valor": "Notebook"
+    },
+    "expected_terms": ["Notebook", "desconto"]
+  },
+  {
+    "id": "queda_preco_monitor_novembro",
+    "csv": "data/vendas_queda_preco_monitor.csv",
+    "anomalia": "O faturamento caiu em novembro em comparacao com outubro.",
+    "expected_cause": {
+      "dimensao": "produto",
+      "valor": "Monitor"
+    },
+    "expected_terms": ["Monitor", "preco"]
+  }
+]

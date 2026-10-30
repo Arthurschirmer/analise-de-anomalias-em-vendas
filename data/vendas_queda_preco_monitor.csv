@@ -1,0 +1,13 @@
+data,produto,categoria,regiao,vendedor,quantidade,preco_unitario,desconto,faturamento
+2024-10-03,Notebook,Eletronicos,Sul,Ana,10,3500,0.05,33250
+2024-10-08,Monitor,Eletronicos,Sul,Bruno,20,900,0.02,17640
+2024-10-12,Mouse,Acessorios,Sul,Carlos,50,80,0.00,4000
+2024-10-16,Teclado,Acessorios,Sudeste,Bruno,25,150,0.03,3637.5
+2024-10-20,Cadeira,Moveis,Sudeste,Ana,10,650,0.05,6175
+2024-10-24,Mesa,Moveis,Sudeste,Carlos,9,800,0.04,6912
+2024-11-03,Notebook,Eletronicos,Sul,Ana,10,3500,0.05,33250
+2024-11-08,Monitor,Eletronicos,Sul,Bruno,20,700,0.02,13720
+2024-11-12,Mouse,Acessorios,Sul,Carlos,50,80,0.00,4000
+2024-11-16,Teclado,Acessorios,Sudeste,Bruno,25,150,0.03,3637.5
+2024-11-20,Cadeira,Moveis,Sudeste,Ana,10,650,0.05,6175
+2024-11-24,Mesa,Moveis,Sudeste,Carlos,9,800,0.04,6912
