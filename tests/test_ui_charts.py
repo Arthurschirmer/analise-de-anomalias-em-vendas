@@ -78,6 +78,39 @@ class ChartTest(unittest.TestCase):
         spec = comparison_chart(report).to_dict(validate=True)
         self.assertIn("ago/2024", json.dumps(spec))
 
+    def test_gbp_currency_in_axes_tooltips_and_comparison_report(self):
+        context = {"currency": "GBP", "currency_symbol": "£"}
+        monthly = self.monthly.copy()
+        monthly.attrs["dataset_context"] = context
+        contributions = pd.DataFrame([{
+            "segmento": "United Kingdom", "variacao_faturamento": -6000,
+            "faturamento_anterior": 10000, "faturamento_atual": 4000,
+        }])
+        report = {
+            "contexto_da_base": context,
+            "resumo_comparativo": {"faturamento_anterior": 10000, "faturamento_atual": 4000},
+        }
+        charts = [
+            trend_chart(monthly),
+            trend_chart(self.monthly, context=context),
+            contribution_chart(contributions, "antes", "depois", context=context),
+            comparison_chart(report),
+        ]
+        for chart in charts:
+            with self.subTest(chart=type(chart).__name__):
+                text = json.dumps(chart.to_dict(validate=True), ensure_ascii=False)
+                self.assertIn("£", text)
+                self.assertNotIn("R$", text)
+                self.assertIn("£ 10.000,00", text)
+        self.assertEqual(monthly.iloc[0]["valor"], 10000)
+
+    def test_gbp_quantity_chart_does_not_add_currency(self):
+        spec = trend_chart(self.monthly, metric="quantidade", context={"currency": "GBP"}).to_dict()
+        text = json.dumps(spec, ensure_ascii=False)
+        self.assertIn("Unidades vendidas", text)
+        self.assertNotIn("£", text)
+        self.assertNotIn("R$", text)
+
 
 if __name__ == "__main__":
     unittest.main()

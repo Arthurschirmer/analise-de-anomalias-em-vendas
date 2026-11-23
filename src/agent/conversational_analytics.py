@@ -5,12 +5,14 @@ import pandas as pd
 
 from src.agent.period_parser import extract_periods_from_text
 from src.analysis.sales_metrics import filter_by_period, percentage_change
+from src.data.capabilities import available_dimensions
+from src.formatting import currency_symbol, format_currency
 
 
 DIMENSIONS = {
     "produto": ("produto", "produtos"),
     "categoria": ("categoria", "categorias"),
-    "regiao": ("regiao", "regioes", "estado", "estados"),
+    "regiao": ("regiao", "regioes", "estado", "estados", "pais", "paises"),
     "vendedor": ("vendedor", "vendedores", "seller", "sellers"),
     "periodo": ("mes", "mensal", "periodo", "periodos"),
 }
@@ -41,8 +43,9 @@ def normalize_text(value):
 def build_entity_index(data):
     """Pre-index dimension values so chat questions can filter without rescanning the CSV."""
     index = {}
+    supported_dimensions = set(available_dimensions(data))
     for dimension in ENTITY_DIMENSIONS:
-        if dimension not in data.columns:
+        if dimension not in supported_dimensions or dimension not in data.columns:
             index[dimension] = []
             continue
 
@@ -63,6 +66,9 @@ def answer_sales_question(question, data, entity_index=None, query_plan=None):
 
     normalized = normalize_text(question)
     metric, unsupported_metric = _detect_metric(normalized)
+    unavailable = _unavailable_request(normalized, query_plan, data)
+    if unavailable:
+        return {"content": unavailable}
     if unsupported_metric:
         return {
             "content": (
@@ -134,11 +140,11 @@ def answer_sales_question(question, data, entity_index=None, query_plan=None):
             limit = plan.get("limit", _requested_limit(normalized)) if plan else _requested_limit(normalized)
             table = table.head(limit)
             direction = "maiores" if descending else "menores"
-            title = f"Top {limit} por {DIMENSION_LABELS[dimension].lower()} ({direction} {METRIC_LABELS[metric].lower()})"
+            title = f"Top {limit} por {DIMENSION_LABELS[dimension].lower()} ({direction} {_metric_label(metric, data).lower()})"
             content = f"Aqui estão os {direction} resultados por {DIMENSION_LABELS[dimension].lower()}:"
         else:
             table = table.sort_values("Valor", ascending=False)
-            title = f"{METRIC_LABELS[metric]} por {DIMENSION_LABELS[dimension].lower()}"
+            title = f"{_metric_label(metric, data)} por {DIMENSION_LABELS[dimension].lower()}"
             content = f"Resumo de {METRIC_LABELS[metric].lower()} por {DIMENSION_LABELS[dimension].lower()}:"
 
         context = _build_context(selected_period, filters)
@@ -158,7 +164,7 @@ def answer_sales_question(question, data, entity_index=None, query_plan=None):
     context = _build_context(selected_period, filters)
     suffix = f" ({context})" if context else ""
     return {
-        "content": f"{METRIC_LABELS[metric]}{suffix}: **{_format_metric(value, metric)}**."
+        "content": f"{METRIC_LABELS[metric]}{suffix}: **{_format_metric(value, metric, data)}**."
     }
 
 
@@ -203,8 +209,8 @@ def _answer_comparison(data, periods, metric, dimension, filters):
         direction = "aumentou" if overall_change > 0 else "caiu" if overall_change < 0 else "não variou"
         content = (
             f"O {METRIC_LABELS[metric].lower()} total {direction} de "
-            f"{_format_metric(_aggregate_value(previous_data, metric), metric)} em {previous_period} "
-            f"para {_format_metric(_aggregate_value(current_data, metric), metric)} em {current_period}. "
+            f"{_format_metric(_aggregate_value(previous_data, metric), metric, data)} em {previous_period} "
+            f"para {_format_metric(_aggregate_value(current_data, metric), metric, data)} em {current_period}. "
             f"Comparação por {DIMENSION_LABELS[dimension].lower()}:"
         )
         context = _build_context(None, filters)
@@ -213,7 +219,7 @@ def _answer_comparison(data, periods, metric, dimension, filters):
         return {
             "content": content,
             "tables": [{
-                "title": f"{METRIC_LABELS[metric]} por {DIMENSION_LABELS[dimension].lower()}",
+                "title": f"{_metric_label(metric, data)} por {DIMENSION_LABELS[dimension].lower()}",
                 "data": comparison.to_dict(orient="records"),
             }],
         }
@@ -226,9 +232,9 @@ def _answer_comparison(data, periods, metric, dimension, filters):
     return {
         "content": (
             f"Comparando {previous_period} com {current_period}, {METRIC_LABELS[metric].lower()} "
-            f"passou de **{_format_metric(previous_value, metric)}** para "
-            f"**{_format_metric(current_value, metric)}**. Variação: "
-            f"**{_format_metric(change, metric)} ({pct_text})**."
+            f"passou de **{_format_metric(previous_value, metric, data)}** para "
+            f"**{_format_metric(current_value, metric, data)}**. Variação: "
+            f"**{_format_metric(change, metric, data)} ({pct_text})**."
         )
     }
 
@@ -274,7 +280,7 @@ def _detect_metric(normalized):
 
     if any(_contains(normalized, term) for term in ("quantidade", "unidades", "unidade", "itens vendidos")):
         return "quantidade", None
-    if _contains(normalized, "desconto"):
+    if any(_contains(normalized, term) for term in ("desconto", "descontos")):
         return "desconto", None
     if _contains(normalized, "preco"):
         return "preco_unitario", None
@@ -473,11 +479,48 @@ def _is_word_character(character):
     return character.isalnum() or character == "_"
 
 
-def _format_metric(value, metric):
+def _unavailable_request(normalized, query_plan, data):
+    metadata = data.attrs.get("dataset_context", {})
+    metadata = metadata if isinstance(metadata, dict) else {}
+    plan = query_plan if isinstance(query_plan, dict) else {}
+    requested_discount = (
+        any(_contains(normalized, term) for term in ("desconto", "descontos"))
+        or plan.get("metric") == "desconto"
+    )
+    if requested_discount and metadata.get("discount_available") is False:
+        return (
+            "Esta base não informa os descontos. O preenchimento zero não representa "
+            "um desconto observado. Posso analisar faturamento, quantidade ou preço unitário."
+        )
+    supported = set(available_dimensions(data))
+    filters = plan.get("filters") if isinstance(plan.get("filters"), dict) else {}
+    for dimension in ENTITY_DIMENSIONS:
+        requested = (
+            any(_contains(normalized, term) for term in DIMENSIONS[dimension])
+            or plan.get("dimension") == dimension
+            or dimension in filters
+        )
+        if requested and dimension not in supported:
+            return (
+                f"Esta base não informa {DIMENSION_LABELS[dimension].lower()}. "
+                "Esse campo está indisponível para agrupamentos e filtros; "
+                "o marcador usado na importação não é uma observação real."
+            )
+    return None
+
+
+def _metric_label(metric, context=None):
+    label = METRIC_LABELS[metric]
+    if metric in {"faturamento", "preco_unitario"} and currency_symbol(context) != "R$":
+        return f"{label} ({currency_symbol(context)})"
+    return label
+
+
+def _format_metric(value, metric, context=None):
     if metric == "faturamento":
-        return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return format_currency(value, context)
     if metric == "quantidade":
         return f"{value:,.0f}".replace(",", ".")
     if metric == "desconto":
         return f"{value:.2f}"
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return format_currency(value, context)

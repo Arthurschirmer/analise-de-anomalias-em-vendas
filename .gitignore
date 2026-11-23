@@ -15,6 +15,8 @@ htmlcov/
 # Bases obtidas localmente e resultados gerados
 data/olist_raw/
 data/olist_padronizado.csv
+data/online_retail_raw/
+data/online_retail_padronizado.csv
 outputs/
 
 # Entregas e cópias locais do TCC

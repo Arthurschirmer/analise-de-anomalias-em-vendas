@@ -68,6 +68,36 @@ class ResearchViewsTest(unittest.TestCase):
         self.assertTrue(result["stages"]["controlled"]["ground_truth_complete"])
         self.assertTrue(Path(result["outputs"]["summary.json"]).is_file())
 
+    def test_advanced_rule_changes_do_not_recalculate_until_submit(self):
+        app = self.app()
+        self.navigate(app, "Histórico")
+        app.button(key="load_historical_demo").click().run()
+        quantile = next(item for item in app.slider if item.label == "Quantil de calibração (%)")
+        self.assertTrue(quantile.disabled)
+        self.submit(app, "historical_detection")
+        self.assertEqual([error.message for error in app.exception], [])
+        initial = app.session_state["historical_result"]
+        self.assertEqual(initial[2]["window"], 8)
+        self.assertEqual(initial[2]["min_history"], 4)
+        self.assertEqual(initial[2]["missing_policy"], "unknown")
+        self.assertEqual(initial[2]["calibration_method"], "robust")
+        app.selectbox(key="historical_metric").set_value("Quantidade").run()
+        app.selectbox(key="historical_calibration").set_value("Quantil dos escores").run()
+        self.assertEqual(app.selectbox(key="historical_metric").value, "Quantidade")
+        quantile = next(item for item in app.slider if item.label == "Quantil de calibração (%)")
+        self.assertFalse(quantile.disabled)
+        quantile.set_value(95).run()
+        self.assertEqual(app.session_state["historical_result"][2], initial[2])
+        self.submit(app, "historical_detection")
+        self.assertEqual([error.message for error in app.exception], [])
+        _, calibration, configuration = app.session_state["historical_result"]
+        self.assertEqual(configuration["calibration_method"], "quantile")
+        self.assertEqual(configuration["quantile"], .95)
+        self.assertEqual(configuration["metric"], "quantidade")
+        self.assertEqual(calibration["method_key"], "quantile")
+        self.assertTrue(any(item.label == "Dias analisados" for item in app.metric))
+        self.assertFalse(any(item.label == "Limiar congelado" for item in app.metric))
+
     def test_offline_comparison_pending_then_human_review(self):
         app = self.app()
         app.button(key="investigate_focus").click().run()

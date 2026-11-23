@@ -55,6 +55,29 @@ def classify_error(error, context="analysis"):
             "technical_details": technical_details,
         }
 
+    # An individual oversized request cannot be classified as a temporary quota
+    # failure just because the provider also mentions TPM or rate_limit_exceeded.
+    # Check the explicit size markers before status-like numbers in the body.
+    if (
+        re.search(r"\bhttp(?:\s+error)?\s*[:=]?\s*413\b", text)
+        or re.search(r"\bstatus(?:_code)?\s*[:=]\s*413\b", text)
+        or (re.search(r"\b413\b", text) and any(term in text for term in ("request", "payload", "entity", "content")))
+        or any(term in text for term in (
+            "request too large", "request_too_large", "request entity too large",
+            "payload too large", "content too large", "context_length_exceeded",
+            "context length exceeded", "maximum context length", "max context length",
+            "context window exceeded", "prompt too long", "input too long",
+            "too many input tokens",
+        ))
+    ):
+        return result(
+            "request_too_large", "warning", "O pedido enviado à IA ficou grande demais",
+            "O contexto deste pedido excedeu o tamanho que o serviço aceita nesta "
+            "solicitação. Os cálculos locais continuam disponíveis.",
+            "Use a análise local. Para usar a IA, reduza ou divida o contexto "
+            "do pedido antes de tentar novamente.",
+        )
+
     if re.search(r"\b1010\b", text):
         return result(
             "cloudflare_1010", "warning", "A conexão com a IA foi bloqueada",

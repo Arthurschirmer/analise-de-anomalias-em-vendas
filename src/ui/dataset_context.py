@@ -8,6 +8,9 @@ import math
 
 import pandas as pd
 
+from src.data.capabilities import available_dimensions
+from src.formatting import currency_symbol
+
 
 SPARSE_MONTH_QUANTITY = 100
 _OLIST_REVENUE = "Soma do preço dos itens de pedidos entregues, pela data da compra; frete excluído."
@@ -36,7 +39,7 @@ def _metadata(data):
 
 
 def _category_coverage(data):
-    if "categoria" not in data:
+    if "categoria" not in data or _metadata(data).get("category_available") is False:
         missing = data
     else:
         categories = data["categoria"].astype("string").str.strip().str.casefold()
@@ -168,6 +171,8 @@ def dataset_context(data, source_type):
     region_label = "UF do cliente" if is_olist else str(metadata.get("region_label") or "Região")
     product_label = "ID do produto" if is_olist else str(metadata.get("product_label") or "Produto")
     seller_label = "ID do vendedor" if is_olist else str(metadata.get("seller_label") or "Vendedor")
+    dimensions = list(available_dimensions(metadata))
+    currency = str(metadata.get("currency") or "BRL")
     coverage = _monthly_coverage(data)
     missing_category = _category_coverage(data)
     notes = []
@@ -194,6 +199,19 @@ def dataset_context(data, source_type):
     elif discount_available is False:
         notes.append("A origem da base declara desconto indisponível; não interprete valores de preenchimento como descontos observados.")
         restrictions.append("A origem declara desconto indisponível. Não atribua variações a valores de preenchimento dessa coluna.")
+
+    if source == "online_retail":
+        notes.extend([revenue_definition, quantity_definition, row_definition])
+        notes.extend(str(item) for item in metadata.get("limitations", []))
+    if currency != "BRL":
+        money_note = f"Valores monetários em {currency} ({currency_symbol(metadata)}), sem conversão para reais."
+        notes.append(money_note)
+        restrictions.append(money_note)
+    for dimension, label in (("categoria", "Categoria"), ("vendedor", "Vendedor")):
+        if dimension not in dimensions:
+            note = f"{label} não é informado pela fonte. O marcador na coluna é técnico e não permite análises por essa dimensão."
+            notes.append(note)
+            restrictions.append(note)
 
     if coverage["missing_months"]:
         notes.append("Meses sem registros no intervalo observado: " + ", ".join(coverage["missing_months"]) + ". Eles não foram preenchidos com zero.")
@@ -223,6 +241,8 @@ def dataset_context(data, source_type):
         "granularidade": row_definition,
         "dimensoes": {"regiao": region_label, "produto": product_label, "vendedor": seller_label},
         "desconto_disponivel": discount_available,
+        "moeda": currency,
+        "dimensoes_disponiveis": dimensions,
         "cobertura": {
             "primeira_data": coverage["first_date"],
             "ultima_data": coverage["last_date"],
@@ -240,6 +260,11 @@ def dataset_context(data, source_type):
     return {
         "source_label": source_label,
         "source_type": source,
+        "currency": currency,
+        "currency_symbol": currency_symbol(metadata),
+        "available_dimensions": dimensions,
+        "category_available": "categoria" in dimensions,
+        "seller_available": "vendedor" in dimensions,
         "region_label": region_label,
         "product_label": product_label,
         "seller_label": seller_label,

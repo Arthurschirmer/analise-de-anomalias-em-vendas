@@ -18,13 +18,18 @@ def parse_args():
     parser.add_argument(
         "--dataset-type",
         default="csv",
-        choices=["csv", "olist"],
+        choices=["csv", "olist", "online_retail"],
         help="Tipo da base de entrada.",
     )
     parser.add_argument(
         "--csv",
         default="data/vendas_demo.csv",
         help="Caminho do CSV no formato padrao do projeto.",
+    )
+    parser.add_argument(
+        "--input-file",
+        default=None,
+        help="Planilha .xlsx ou ZIP original da UCI Online Retail.",
     )
     parser.add_argument(
         "--input-dir",
@@ -102,6 +107,7 @@ def main():
         dataset_type=args.dataset_type,
         csv_path=args.csv,
         input_dir=args.input_dir,
+        input_path=args.input_file,
     )
     if args.export_standardized:
         standardized_path = Path(args.export_standardized)

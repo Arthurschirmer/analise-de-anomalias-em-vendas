@@ -30,6 +30,56 @@ class FeedbackTest(unittest.TestCase):
             with self.subTest(code=code):
                 self.assertEqual(classify_error(message)["code"], code)
 
+    def test_oversized_request_is_not_a_temporary_quota_failure(self):
+        message = (
+            "A API respondeu HTTP 413: Request too large for model `example-model` "
+            "in organization `org_example` service tier `on_demand` on tokens per "
+            "minute (TPM): Limit 6000, Requested 28000. code: rate_limit_exceeded"
+        )
+        feedback = classify_error(message, context="api")
+        self.assertEqual(feedback["code"], "request_too_large")
+        self.assertEqual(feedback["kind"], "warning")
+        self.assertIn("grande demais", feedback["title"])
+        self.assertIn("análise local", feedback["action"])
+        self.assertNotIn("Aguarde", feedback["action"])
+        self.assertIn("HTTP 413", feedback["technical_details"])
+
+    def test_context_window_and_payload_size_errors_have_specific_feedback(self):
+        for message in (
+            "HTTP 400: context_length_exceeded",
+            "This model's maximum context length is 8192 tokens.",
+            "Payload too large",
+            "Request Entity Too Large",
+            "status_code: 413",
+            "The input is too large: input too long",
+        ):
+            with self.subTest(message=message):
+                self.assertEqual(classify_error(message)["code"], "request_too_large")
+
+    def test_size_error_takes_precedence_over_status_like_token_counts(self):
+        feedback = classify_error("HTTP 413: Request too large. TPM Limit 1000, Requested 1010.")
+        self.assertEqual(feedback["code"], "request_too_large")
+
+    def test_real_temporary_tpm_limit_remains_a_rate_limit(self):
+        feedback = classify_error(
+            "HTTP 429: Rate limit reached on tokens per minute (TPM). "
+            "Limit 6000, Used 5000, Requested 2000. Please try again in 15s."
+        )
+        self.assertEqual(feedback["code"], "rate_limit")
+        self.assertIn("Aguarde", feedback["action"])
+
+    def test_oversized_request_does_not_expose_credentials(self):
+        secret = "gsk_FICTITIOUSFEEDBACKTEST1234567890"
+        feedback = classify_error(f"HTTP 413: Request too large; Authorization: Bearer {secret}")
+        serialized = json.dumps(feedback, ensure_ascii=False)
+        self.assertEqual(feedback["code"], "request_too_large")
+        self.assertNotIn(secret, serialized)
+        self.assertIn("chave oculta", feedback["technical_details"])
+
+    def test_an_ordinary_numeric_value_is_not_an_http_size_error(self):
+        feedback = classify_error(ValueError("O valor informado na coluna faturamento foi 413."))
+        self.assertEqual(feedback["code"], "unknown")
+
     def test_missing_months_is_not_a_no_anomaly_result(self):
         feedback = classify_error("Precisamos de dois periodos consecutivos para detectar uma variação mensal.")
         self.assertEqual(feedback["code"], "missing_consecutive_periods")

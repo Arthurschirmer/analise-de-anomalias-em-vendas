@@ -1,6 +1,11 @@
+from src.data.capabilities import available_dimensions, dataset_metadata
+
+
 def rank_probable_causes(evidence, limit=5):
     comparison = evidence.get("period_comparison", {})
-    drivers = evidence.get("main_drivers", [])
+    dimensions = available_dimensions(evidence)
+    drivers = [item for item in evidence.get("main_drivers", []) if item.get("dimensao") in dimensions]
+    discount_available = dataset_metadata(evidence).get("discount_available") is not False
 
     if not comparison or not drivers:
         return []
@@ -10,13 +15,13 @@ def rank_probable_causes(evidence, limit=5):
 
     max_revenue_change = _max_abs(candidates, "variacao_faturamento")
     max_quantity_change = _max_abs(candidates, "variacao_quantidade")
-    max_discount_change = _max_abs(candidates, "variacao_desconto_medio")
+    max_discount_change = _max_abs(candidates, "variacao_desconto_medio") if discount_available else 0.0
 
     ranked = []
     for item in candidates:
         revenue_change = float(item.get("variacao_faturamento", 0.0))
         quantity_change = float(item.get("variacao_quantidade", 0.0))
-        discount_change = float(item.get("variacao_desconto_medio", 0.0))
+        discount_change = float(item.get("variacao_desconto_medio", 0.0)) if discount_available else 0.0
 
         impact_score = _safe_ratio(abs(revenue_change), max_revenue_change)
         contribution_score = _safe_ratio(abs(revenue_change), abs(total_change))
@@ -38,7 +43,7 @@ def rank_probable_causes(evidence, limit=5):
                 "score": round(score, 2),
                 "confianca": _confidence_label(score),
                 "hipotese": _build_hypothesis(item, total_change),
-                "evidencias": _build_evidence_list(item, total_change),
+                "evidencias": _build_evidence_list(item, total_change, discount_available),
                 "metricas": {
                     "faturamento_anterior": item["faturamento_anterior"],
                     "faturamento_atual": item["faturamento_atual"],
@@ -47,7 +52,7 @@ def rank_probable_causes(evidence, limit=5):
                         "variacao_percentual_faturamento"
                     ],
                     "variacao_quantidade": quantity_change,
-                    "variacao_desconto_medio": discount_change,
+                    "variacao_desconto_medio": discount_change if discount_available else None,
                     "variacao_preco_unitario_medio": item.get(
                         "variacao_preco_unitario_medio", 0.0
                     ),
@@ -84,7 +89,7 @@ def _build_hypothesis(item, total_change):
     )
 
 
-def _build_evidence_list(item, total_change):
+def _build_evidence_list(item, total_change, discount_available=True):
     direction = "queda" if total_change < 0 else "aumento"
     evidences = [
         (
@@ -96,7 +101,7 @@ def _build_evidence_list(item, total_change):
     ]
 
     discount_change = item.get("variacao_desconto_medio", 0.0)
-    if abs(discount_change) > 0:
+    if discount_available and abs(discount_change) > 0:
         evidences.append(
             f"Desconto medio variou {discount_change:.2f} ponto(s)."
         )

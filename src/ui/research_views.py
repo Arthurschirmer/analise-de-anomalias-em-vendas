@@ -17,11 +17,14 @@ from src.evaluation.llm_comparison import compare_investigation_reports, save_co
 from src.evaluation.manual_review import JUDGEMENTS, read_reviews, review_scope, save_review
 from src.ui.feedback import sanitize_details
 from src.ui.review_views import render_sample_builder, render_review_panel
+from src.data.capabilities import available_dimensions
+from src.formatting import currency_symbol
+from src.ui.alert_views import render_alert_card
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def historical_chart(frame):
+def historical_chart(frame, context=None, metric=None):
     plot = frame.copy()
     plot["etapa"] = plot["split"].map({"train": "Treino", "calibration": "Calibração", "test": "Teste"})
     plot["alerta"] = plot["flag"] & plot["split"].eq("test")
@@ -36,7 +39,7 @@ def historical_chart(frame):
                alt.Tooltip("upper:Q", title="Limite superior", format=",.2f"),
                alt.Tooltip("n_history:Q", title="Pontos anteriores")]
     band = base.mark_area(opacity=.12, color="#6357D9").encode(
-        y=alt.Y("lower:Q", title="Valor"), y2="upper:Q", detail="segmento_referencia:N")
+        y=alt.Y("lower:Q", title="Quantidade" if metric == "quantidade" else f"Valor ({currency_symbol(context)})" if context is not None else "Valor"), y2="upper:Q", detail="segmento_referencia:N")
     reference = base.mark_line(color="#6357D9", strokeDash=[6, 4]).encode(
         y="expected:Q", detail="segmento_referencia:N")
     actual = base.mark_line(color="#26A69A").encode(
@@ -108,7 +111,8 @@ def _render_segment_result(data, result, config):
     st.download_button("Baixar resultados por segmento", points.to_csv(index=False).encode("utf-8-sig"),
                        "anomalias_segmentos.csv", mime="text/csv", key="download_segments")
     points.attrs["split_boundaries"] = metadata["split_boundaries"]
-    render_sample_builder(data, points, result["configuration"], ROOT / "outputs/reviews")
+    with st.expander("Preparar uma revisão do TCC (opcional)"):
+        render_sample_builder(data, points, result["configuration"], ROOT / "outputs/reviews")
     options = evaluated["segmento"].astype(str).tolist()
     if st.session_state.get("historical_segment") not in options:
         st.session_state.pop("historical_segment", None)
@@ -120,30 +124,44 @@ def _render_segment_result(data, result, config):
 
 
 def render_history(data, load_demo):
-    st.subheader("O que foge do histórico?", icon=":material/timeline:")
-    st.caption("Compare o valor observado com uma referência calculada apenas com dados anteriores.")
+    st.subheader("Analisar dias e semanas", icon=":material/timeline:")
+    st.caption("Escolha o que analisar e clique no botão. O sistema procura dias ou semanas com vendas distantes do padrão anterior.")
     if (data["data"].max() - data["data"].min()).days < 56 or data["data"].nunique() < 56:
-        st.info("Esta base é curta ou esparsa para separar treino, calibração e teste. Carregue um histórico maior ou experimente a demonstração de 420 dias.")
+        st.info("Esta base é curta ou tem poucos dias registrados para esta análise. Use uma base com mais histórico ou experimente a demonstração de 420 dias. Para comparar dois meses, escolha a análise entre meses.")
         if st.button("Carregar demonstração histórica", icon=":material/science:", key="load_historical_demo"):
             load_demo(controlled_sales())
             st.rerun()
-    with st.form("historical_detection", border=True):
+    # Settings update without fitting. Only the submit event below runs the
+    # analysis, avoiding buffered form inputs being lost when a rule changes.
+    with st.container(border=True):
+        metric = st.selectbox("O que analisar", ["Faturamento", "Quantidade"], key="historical_metric")
         left, right = st.columns(2)
-        scope = left.selectbox("Analisar", ["Base inteira", "Por categoria", "Por região / UF"], key="historical_scope")
-        calibration_rule = right.selectbox("Regra de calibração", ["Mediana e MAD dos escores", "Quantil dos escores"], key="historical_calibration")
-        frequency = left.selectbox("Agregação", ["Diária", "Semanal"], key="historical_frequency")
-        metric = right.selectbox("Métrica histórica", ["Faturamento", "Quantidade"], key="historical_metric")
-        window = left.number_input("Janela de referência", min_value=4, max_value=26, value=8, step=1)
-        minimum = right.number_input("Observações mínimas anteriores", min_value=3, max_value=26, value=4, step=1)
-        trend = left.checkbox("Considerar tendência local", value=True)
-        missing = right.selectbox("Datas sem registros", ["Manter como desconhecidas", "Assumir vendas iguais a zero"])
-        quantile = st.slider("Quantil de calibração (%)", 90, 100, 98)
-        with st.expander("Filtros para análise de segmentos"):
-            st.caption("A escolha dos segmentos usa somente o treino. Grupos sem suporte suficiente ficam identificados como não avaliados.")
-            max_segments = st.number_input("Máximo de segmentos", min_value=1, max_value=30, value=12, step=1)
-            min_share = st.number_input("Participação mínima no treino (%)", min_value=0.0, max_value=100.0, value=1.0, step=.5)
-        st.caption("Diária: mesmo dia da semana em semanas anteriores. Semanal: semanas completas anteriores. Treino 50% · calibração 25% · teste restante.")
-        submitted = st.form_submit_button("Calcular referência histórica", type="primary", icon=":material/query_stats:")
+        frequency = left.selectbox("Agrupar as vendas por", ["Diária", "Semanal"], key="historical_frequency")
+        scopes = ["Base inteira"]
+        supported = available_dimensions(data)
+        if "categoria" in supported:
+            scopes.append("Por categoria")
+        if "regiao" in supported:
+            scopes.append("Por país" if data.attrs.get("dataset_context", {}).get("source_type") == "online_retail" else "Por região / UF")
+        scope = right.selectbox("Onde procurar mudanças", scopes, key="historical_scope")
+        with st.expander("Ajustes avançados da análise", icon=":material/tune:"):
+            calibration_rule = st.selectbox("Regra de calibração", ["Mediana e MAD dos escores", "Quantil dos escores"], key="historical_calibration")
+            left, right = st.columns(2)
+            window = left.number_input("Janela de referência", min_value=4, max_value=26, value=8, step=1)
+            minimum = right.number_input("Observações mínimas anteriores", min_value=3, max_value=26, value=4, step=1)
+            trend = left.checkbox("Considerar tendência local", value=True)
+            missing = right.selectbox("Datas sem registros", ["Manter como desconhecidas", "Assumir vendas iguais a zero"])
+            quantile = st.slider("Quantil de calibração (%)", 90, 100, 98,
+                                 disabled=calibration_rule.startswith("Mediana"),
+                                 help="Este parâmetro só é usado na regra Quantil dos escores.")
+            with st.expander("Filtros para análise de segmentos"):
+                st.caption("A escolha dos segmentos usa somente o treino. Grupos sem suporte suficiente ficam identificados como não avaliados.")
+                max_segments = st.number_input("Máximo de segmentos", min_value=1, max_value=30, value=12, step=1)
+                min_share = st.number_input("Participação mínima no treino (%)", min_value=0.0, max_value=100.0, value=1.0, step=.5)
+            st.caption("Diária: mesmo dia da semana em semanas anteriores. Semanal: semanas completas anteriores. Treino 50% · calibração 25% · teste restante.")
+        st.caption("Os ajustes padrão já estão preenchidos. A análise funciona sem consultar uma API de IA.")
+        with st.form("historical_detection", border=False):
+            submitted = st.form_submit_button("Analisar esta base", type="primary", icon=":material/query_stats:")
     if submitted:
         config = {"frequency": "D" if frequency == "Diária" else "W-SUN",
                   "metric": "faturamento" if metric == "Faturamento" else "quantidade",
@@ -177,28 +195,34 @@ def render_history(data, load_demo):
         return
     result = st.session_state.get("historical_result")
     if result is None:
-        st.caption("Os limites e alertas aparecem depois do cálculo. Nenhuma chamada à IA é necessária.")
+        st.caption("O gráfico e os dias para investigar aparecerão depois de clicar em Analisar esta base.")
         return
     scored, calibration, config = result
     _render_series_result(data, scored, calibration, config)
 
 
 def _render_series_result(data, scored, calibration, config, allow_sample=True):
-    st.caption("Resultado calculado: " + ("diário" if config["frequency"] == "D" else "semanal") +
-               f' · janela {config["window"]} · mínimo {config["min_history"]} · calibração ' +
-               ("mediana e MAD" if config.get("calibration_method", "robust") == "robust" else "quantil"))
     test = scored.loc[scored["split"].eq("test")]
     alerts = test.loc[test["eligible"] & test["flag"]]
+    unit = "Dias" if config["frequency"] == "D" else "Semanas"
+    noun = ("dia" if config["frequency"] == "D" else "semana") if len(alerts) == 1 else unit.lower()
+    st.markdown(f"**{len(alerts)} {noun} com alerta para investigar.**")
+    st.caption("Um alerta indica um valor distante do padrão usado na comparação. Ele pede conferência; não confirma erro nem explica a causa sozinho.")
     with st.container(horizontal=True):
-        st.metric("Pontos avaliáveis no teste", str(int(test["eligible"].sum())), border=True)
-        st.metric("Alertas para revisar", str(len(alerts)), border=True)
-        st.metric("Limiar congelado", f'{calibration["threshold"]:.2f}', border=True)
+        st.metric(unit + " analisados", str(int(test["eligible"].sum())), border=True)
+        st.metric(unit + " para investigar", str(len(alerts)), border=True)
+        st.metric("Períodos sem decisão", str(int((~test["eligible"]).sum())), border=True)
+    st.caption("Os alertas são avaliados na parte final do histórico. Os períodos anteriores ajudam a construir a referência e a definir o limite de alerta.")
     with st.container(border=True):
-        st.markdown("**Observado, referência e limites de decisão**")
-        st.altair_chart(historical_chart(scored), width="stretch")
-        st.caption("Verde: observado · roxo tracejado: referência · faixa roxa: limites de decisão · vermelho: alertas no teste. Linhas verticais separam treino, calibração e teste.")
-        st.caption("Os limites são regras empíricas de decisão, sem interpretação de intervalo de confiança. A referência se atualiza com o passado; o limiar é fixado na calibração.")
+        st.markdown("**Quais dias ou semanas ficaram fora do padrão?**")
+        show_reference = st.checkbox("Mostrar também o período usado para construir a referência", value=False, key="historical_show_reference")
+        st.altair_chart(historical_chart(scored if show_reference else test, context=data, metric=config["metric"]), width="stretch")
+        st.caption("Verde: vendas registradas. Roxo tracejado: referência para comparação. Faixa roxa: limites desta análise. Vermelho: períodos para investigar.")
     with st.expander("Como o resultado foi calculado"):
+        st.caption("Configuração aplicada: " + ("diária" if config["frequency"] == "D" else "semanal") +
+                   f' · janela {config["window"]} · mínimo {config["min_history"]} · calibração ' +
+                   ("mediana e MAD" if config.get("calibration_method", "robust") == "robust" else "quantil"))
+        st.caption("Os limites são regras empíricas de decisão, sem interpretação de intervalo de confiança. A referência se atualiza com o passado; o limiar é fixado na calibração.")
         st.json({"configuration": config, "calibration": calibration, "splits": scored.attrs["split_boundaries"]})
         st.markdown("A tendência usa a mediana das inclinações entre pares anteriores. A escala usa MAD dos resíduos × 1,4826, com piso de 5% da referência ou 1 unidade. Ela não modela feriados nem sazonalidade anual.")
         st.caption("Desconhecidos são excluídos. Semanas parciais ficam inelegíveis. Status finais da Olist tornam a análise retrospectiva.")
@@ -206,33 +230,46 @@ def _render_series_result(data, scored, calibration, config, allow_sample=True):
     st.download_button("Baixar série e limites", scored.to_csv(index=False).encode("utf-8-sig"),
                        "serie_historica.csv", mime="text/csv", key="download_historical_series")
     if allow_sample:
-        render_sample_builder(data, scored, config, ROOT / "outputs/reviews")
+        with st.expander("Preparar uma revisão do TCC (opcional)"):
+            render_sample_builder(data, scored, config, ROOT / "outputs/reviews")
     if alerts.empty:
         st.info("Nenhum alerta no teste com esta configuração. Isso não comprova ausência de anomalias.")
         return
-    st.dataframe(alerts[["periodo", "valor", "expected", "lower", "upper", "score"]].rename(columns={
+    st.dataframe(alerts[["periodo", "valor", "expected"]].rename(columns={
+        "periodo": "Período", "valor": "Valor registrado", "expected": "Referência para comparação"}), hide_index=True)
+    selected_period = render_alert_card(data, scored, alerts, calibration, config)
+    with st.expander("Detalhes numéricos dos alertas"):
+        st.dataframe(alerts[["periodo", "valor", "expected", "lower", "upper", "score"]].rename(columns={
         "periodo": "Período", "valor": "Observado", "expected": "Referência", "lower": "Limite inferior",
         "upper": "Limite superior", "score": "Escore"}), hide_index=True)
-    _render_review(data, scored, alerts, config)
+    with st.expander("Registrar um parecer sobre o alerta (opcional)"):
+        _render_review(data, scored, alerts, config, selected_period=selected_period)
 
 
-def _render_review(data, scored, alerts, config):
+def _render_review(data, scored, alerts, config, selected_period=None):
     st.markdown("**Revisão humana dos alertas**")
     st.caption("O detector sinaliza mudanças; o parecer deve considerar o contexto comercial e a qualidade da fonte.")
     periods = alerts["periodo"].tolist()
     if st.session_state.get("historical_alert_date") not in periods:
         st.session_state.pop("historical_alert_date", None)
-    period = st.selectbox("Alerta para revisar", periods, key="historical_alert_date")
+    period = selected_period if selected_period is not None else st.selectbox("Alerta para revisar", periods, key="historical_alert_date")
+    if selected_period is not None:
+        st.caption("Parecer sobre o alerta selecionado na ficha: " + selected_period)
     selected = scored.loc[scored["periodo"].eq(period)].iloc[0]
     observed = data.loc[data["data"].dt.normalize().between(selected["inicio_periodo"], selected["fim_periodo"])]
     if config.get("dimension") and config.get("segmento"):
         labels = observed[config["dimension"]].astype("string").fillna("(não informado)").astype(str)
         observed = observed.loc[labels.eq(config["segmento"])]
-    if not observed.empty:
-        frame = observed.groupby("categoria", as_index=False)["faturamento"].sum()
-        st.bar_chart(frame.nlargest(10, "faturamento"), x="categoria", y="faturamento",
-                     x_label="Categoria", y_label="Faturamento observado")
-        st.caption("Distribuição observada no período selecionado; o gráfico não atribui uma causa ao desvio.")
+    if not observed.empty and selected_period is None:
+        supported = available_dimensions(data)
+        dimension = next((item for item in ("categoria", "regiao", "produto") if item in supported), None)
+        if dimension is not None:
+            metric = config.get("metric", "faturamento")
+            frame = observed.groupby(dimension, as_index=False)[metric].sum()
+            labels = {"categoria": "Categoria", "regiao": data.attrs.get("dataset_context", {}).get("region_label", "Região"), "produto": "Produto"}
+            st.bar_chart(frame.nlargest(10, metric), x=dimension, y=metric,
+                         x_label=labels[dimension], y_label="Quantidade" if metric == "quantidade" else f"Faturamento observado ({currency_symbol(data)})")
+            st.caption("Distribuição observada no período selecionado; o gráfico não atribui uma causa ao desvio.")
     scope = review_scope(data, config)
     reviews = read_reviews(scope, ROOT / "outputs/reviews")
     current = reviews.get(period, {})
@@ -259,8 +296,16 @@ def _render_review(data, scored, alerts, config):
 
 
 def render_evaluation(data, investigation, provider_factory):
-    st.subheader("Avaliação do trabalho", icon=":material/science:")
-    mode = st.selectbox("Experimento", ["Detecção de anomalias", "Relatório local e IA", "Revisão humana"], key="evaluation_mode")
+    st.subheader("Experimentos do TCC", icon=":material/science:")
+    st.caption("Esta área verifica o comportamento dos métodos e registra avaliações. Para investigar a base carregada, use Analisar no caminho principal.")
+    modes = ["Detecção de anomalias", "Promoções e quedas", "Relatório local e IA", "Revisão humana"]
+    if st.session_state.get("evaluation_mode") is not None and st.session_state.evaluation_mode not in modes:
+        st.session_state.pop("evaluation_mode", None)
+    mode = st.selectbox("Experimento", modes, key="evaluation_mode")
+    if mode == "Promoções e quedas":
+        from src.ui.context_views import render_context_experiment
+        render_context_experiment()
+        return
     if mode == "Revisão humana":
         render_review_panel()
         return
@@ -270,6 +315,8 @@ def render_evaluation(data, investigation, provider_factory):
     st.markdown("**Um experimento reproduzível com respostas conhecidas**")
     st.caption("420 dias fictícios com tendência, padrão semanal e ruído. Compare o baseline, o quantil anterior e a nova calibração por mediana e MAD, usando os mesmos pontos no teste.")
     olist = data.attrs.get("dataset_context", {}).get("source_type") == "olist"
+    if data.attrs.get("dataset_context", {}).get("source_type") == "online_retail":
+        st.info("Esta comparação experimental usa os cenários fictícios. Para detectar mudanças na UCI Online Retail carregada, use Analisar → Dias e semanas. A base real não tem gabarito de anomalias.")
     if olist:
         st.info("A base Olist carregada também será copiada para receber perturbações artificiais. Os arquivos originais são preservados; pontos reais sem injeção continuam sem rótulo.")
     with st.form("benchmark_settings"):
@@ -468,6 +515,7 @@ def _render_explanation_comparison(investigation, provider_factory):
 
 
 def render_revenue_explanation(report):
+    symbol = currency_symbol(report)
     decomposition = report.get("decomposicao_faturamento", {})
     if decomposition.get("available"):
         with st.container(border=True):
@@ -476,11 +524,11 @@ def render_revenue_explanation(report):
                 st.info("Não há produtos comuns nos dois meses. Apenas entradas e saídas observadas podem ser decompostas neste recorte.")
             components = pd.DataFrame(decomposition["components"])
             chart = alt.Chart(components).mark_bar(cornerRadiusEnd=4).encode(
-                x=alt.X("value:Q", title="Contribuição para a diferença de faturamento (R$)"),
+                x=alt.X("value:Q", title=f"Contribuição para a diferença de faturamento ({symbol})"),
                 y=alt.Y("label:N", sort=None, title=None),
                 color=alt.condition(alt.datum.value >= 0, alt.value("#26A69A"), alt.value("#EF6B73")),
                 tooltip=[alt.Tooltip("label:N", title="Componente"),
-                         alt.Tooltip("value:Q", title="Contribuição (R$)", format=",.2f")],
+                         alt.Tooltip("value:Q", title=f"Contribuição ({symbol})", format=",.2f")],
             ).properties(height=220)
             st.altair_chart(chart, width="stretch")
             st.caption("A soma dos componentes reconcilia a diferença total. Volume e mix usam somente os produtos comuns aos dois meses; entradas e saídas são separadas.")

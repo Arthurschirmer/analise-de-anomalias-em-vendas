@@ -2,15 +2,15 @@
 
 Protótipo de TCC em Ciência da Computação:
 
-**Desenvolvimento e avaliação de um agente para investigação de anomalias em dados de vendas** (título provisório).
+**Desenvolvimento e avaliação de um agente para investigação de anomalias em dados de vendas**.
 
 Autor: Arthur Thomé da Cruz Schirmer. Orientador: Paulo Sérgio Sausen.
 
 ## Objetivo
 
-O sistema recebe dados de vendas em formato CSV, recebe uma descricao de anomalia e utiliza um agente para investigar evidencias nos dados. A primeira versao busca explicar variacoes como queda de faturamento entre periodos, observando fatores como produto, categoria, regiao, vendedor, quantidade, preco, desconto e faturamento.
+O sistema importa dados de vendas em CSV ou Excel e reúne ferramentas para detectar mudanças, comparar períodos e investigar evidências. A análise considera produtos, categorias, regiões, vendedores, quantidades, preços, descontos e faturamento, conforme os campos disponíveis na base.
 
-Nesta versao, o agente usa ferramentas deterministicas para calcular os numeros e um provedor de LLM abstrato para gerar a conclusao. Por padrao, o projeto roda em modo `mock`, sem precisar de API externa.
+O agente usa ferramentas determinísticas para calcular os números. A integração opcional com um modelo de linguagem auxilia na interpretação de perguntas e na redação de explicações. Por padrão, o projeto roda em modo `mock`, com respostas locais por regras e sem precisar de API externa.
 
 Os arquivos CSV de demonstração estão incluídos no projeto. A configuração de
 versionamento mantém fora do repositório as credenciais locais, o ambiente virtual,
@@ -89,20 +89,22 @@ Para abrir a interface web local:
 .\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
-Na interface, o usuario pode carregar um CSV, usar a base demo, carregar a base
-Olist local, conversar com o agente, executar deteccao automatica, visualizar
-graficos e baixar o log da investigacao.
+Na interface, o usuário pode preparar um CSV ou Excel, usar uma base fictícia,
+carregar as bases Olist ou UCI Online Retail disponíveis localmente, conversar
+com o agente, consultar alertas, visualizar gráficos e exportar a investigação.
 
-A interface abre com um cenário fictício e organiza a análise em seis áreas:
+A interface abre com um cenário fictício. O modo **Analisar dados** tem quatro áreas:
 
-- **Painel:** indicadores, evolução do faturamento, variações mensais e contribuição por segmento.
-- **Histórico:** referência diária ou semanal, tendência local, limites de decisão, alertas no teste e revisão humana persistida.
-- **Investigação:** detecção automática ou comparação de dois meses, com evidências e gráficos antes/depois.
-- **Assistente:** perguntas sobre a anomalia, com exemplos baseados nos meses da base carregada.
-- **Avaliação:** experimento controlado, Olist com injeções conhecidas e comparação entre explicações locais e da IA.
-- **Dados e relatório:** prévia do CSV e exportação da base, do relatório legível e do registro técnico.
+- **Visão geral:** indicadores e evolução mensal, com o botão **Analisar esta base**.
+- **Analisar:** alertas por dia/semana ou comparação entre meses. Os ajustes técnicos ficam recolhidos.
+- **Conversar:** perguntas sobre as vendas, totais e comparações mensais.
+- **Dados e resultados:** prévia e download da base, calendário disponível e relatório da investigação mensal.
 
-Os quatro cenários fictícios podem ser trocados pela barra lateral. O menu do app
+O modo separado **Experimentos do TCC** reúne comparações entre detectores,
+gabaritos dos cenários fictícios e revisão humana. Os cartões de variação mensal
+aparecem apenas na Visão geral, para não misturá-los com os alertas diários.
+
+Os cenários fictícios podem ser trocados pela barra lateral. O menu do app
 permite alternar entre tema claro e escuro. A assistência de IA pode ser desligada;
 se o provedor falhar, a investigação continua com cálculos locais e mostra um aviso
 com uma ação sugerida. O erro original fica nos detalhes técnicos, com chaves ocultas.
@@ -114,7 +116,7 @@ distintas não devem ser somadas porque compartilham os mesmos registros de vend
 
 ### Perguntas no chat
 
-Depois de carregar uma base, a área `Assistente` aceita perguntas analiticas em linguagem
+Depois de carregar uma base, a área `Conversar` aceita perguntas analiticas em linguagem
 natural. Exemplos:
 
 ```text
@@ -131,7 +133,7 @@ Os resultados aparecem na conversa como texto, tabela e, quando aplicavel, grafi
 Perguntas sobre causa de uma variacao usam o fluxo de investigacao existente.
 
 Por padrao, o sistema interpreta perguntas comuns com regras locais e executa os
-calculos no codigo. Com `LLM_PROVIDER=http`, o provedor configurado tambem pode
+calculos no codigo. Com `LLM_PROVIDER=groq` ou `LLM_PROVIDER=http`, o provedor configurado tambem pode
 interpretar perguntas e gerar um plano estruturado; o plano e validado antes da
 execucao das ferramentas. Nesse modo, a pergunta e o contexto recente da conversa
 sao enviados ao provedor, enquanto as linhas da base permanecem locais. Metricas
@@ -202,6 +204,26 @@ O faturamento é a soma dos preços dos itens de pedidos entregues, pela data da
 compra, sem frete. A dimensão `regiao` contém UFs dos clientes. Os identificadores
 de produto e vendedor não contêm nomes comerciais. Essas definições acompanham
 as evidências e os relatórios para limitar interpretações indevidas.
+
+### Usar a Online Retail da UCI
+
+A interface também importa a [Online Retail da UCI](https://archive.ics.uci.edu/dataset/352/online+retail)
+diretamente da planilha `.xlsx` ou do ZIP original, sem extraí-lo. Instale as
+dependências atualizadas de `requirements.txt` e escolha **UCI Online Retail**
+na barra lateral. Informe o arquivo local e clique em **Carregar Online Retail**.
+O caminho sugerido é `data/online_retail_raw/online_retail.zip`.
+
+Os valores permanecem em libras esterlinas (`GBP`, `£`), sem conversão para reais.
+São mantidas vendas com quantidade e preço positivos, excluindo faturas de
+cancelamento. A importação registra descartes e confere a soma das quantidades
+e dos valores. Produto corresponde ao código `StockCode`; região é o país do
+cliente. Categoria, vendedor e desconto ficam identificados como indisponíveis,
+sem usar seus preenchimentos para explicar variações.
+
+A base original cobre dezembro de 2010 a 9 de dezembro de 2011. O último mês tem
+um recorte menor do calendário; uma comparação com novembro precisa considerar
+essa diferença. Os dados reais não possuem um gabarito de anomalias confirmado.
+Veja [o escopo e a auditoria da importação](docs/online_retail.md).
 
 ### Validar com os dados reais da Olist
 
@@ -368,14 +390,18 @@ No modo automatico, antes da investigacao o sistema:
 
 ## Histórico e avaliação acadêmica
 
-As telas **Histórico** e **Avaliação** incluem referência por dia da semana,
+O site inclui preparação guiada de CSV/Excel, ficha individual de alertas,
+comparação do mesmo intervalo de dias e um histórico local de investigações.
+O passo a passo e as limitações estão em [docs/melhorias_site.md](docs/melhorias_site.md).
+
+As áreas **Analisar** e **Experimentos do TCC** incluem referência por dia da semana,
 tendência local, separação cronológica e revisão humana. As investigações mostram
 os efeitos de volume, mix e valor unitário, além de indicadores operacionais da Olist.
-No Histórico, selecione **Base inteira**, **Por categoria** ou **Por região / UF**.
+Na análise por dia ou semana, selecione **Base inteira**, **Por categoria** ou **Por região / UF**.
 A calibração padrão usa mediana e MAD; a regra anterior de quantil continua disponível.
-Em **Avaliação**, a suíte ampliada compara mudanças pequenas, graduais e persistentes
+Em **Experimentos do TCC**, a suíte ampliada compara mudanças pequenas, graduais e persistentes
 em várias sementes. A opção **Revisão humana** aceita uma amostra com e sem alertas,
-preparada no Histórico, e mantém as métricas pendentes até os pareceres conclusivos.
+preparada na análise diária, e mantém as métricas pendentes até os pareceres conclusivos.
 O protocolo, fórmulas, limitações e comandos estão em [docs/avaliacao.md](docs/avaliacao.md).
 
 ```powershell
@@ -388,10 +414,42 @@ A avaliação dos detectores é offline. A comparação de explicações só con
 API com `--with-ai` ou quando essa opção é marcada no site. Notas humanas ficam
 pendentes até o preenchimento; não há precisão/F1 reais sem rótulos independentes.
 
+## Experimento com promoções e quedas
+
+Em **Experimentos do TCC → Promoções e quedas**, gere uma base fictícia e compare a detecção
+com e sem um calendário informado. A simulação contém promoções e quedas extras inesperadas, inclusive durante as promoções.
+
+Para carregar os arquivos prontos no painel, selecione **Demonstração → Promoções e quedas → Carregar base de exemplo** na barra lateral. Os 1.680 registros e o calendário
+são carregados juntos; a tela **Analisar** mostra os dias para investigar e sua explicação.
+O botão de recalcular utiliza esses arquivos,
+em vez de gerar uma base diferente. Um acesso direto também pode usar
+`?demo_scenario=Promo%C3%A7%C3%B5es+e+quedas` no endereço do aplicativo.
+
+As vendas, o calendário e o gabarito são arquivos separados. Os CSVs de exemplo
+da semente 42 estão em [data/contextual_demo](data/contextual_demo/LEIA-ME.md).
+O gabarito serve para avaliar as previsões; ele não entra no ajuste do detector.
+
+Também é possível executar localmente:
+
+```powershell
+.\.venv\Scripts\python.exe run_context_experiment.py
+```
+
+Os efeitos de promoção são regras do gerador. O experimento ilustra o
+uso de informações de contexto; seus resultados não demonstram causalidade em
+dados reais nem superioridade geral. O importador comum aceita o CSV de vendas;
+o calendário separado é utilizado nesta avaliação experimental.
+Veja o [procedimento e as limitações](docs/experimento_contextual.md).
+
 ## Testes automatizados
+
+O site também permite conversar sobre um alerta selecionado, guardar perfis
+de importação e baixar investigações e fichas de alerta em PDF. Veja os
+[passos de uso](docs/melhorias_site.md). Esses recursos funcionam localmente.
 
 ```powershell
 $env:LLM_PROVIDER = "mock"
+$env:ANOMALY_HISTORY_DIR = "outputs/test_runtime/investigations"
 .\.venv\Scripts\python.exe -m unittest discover -s tests -q
 ```
 

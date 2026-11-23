@@ -1,4 +1,6 @@
 from src.agent.period_parser import extract_periods_from_text
+from src.agent.conclusion_context import build_conclusion_context, shorten_description
+from src.data.capabilities import available_dimensions
 from src.evaluation.investigation_log import InvestigationLog
 from src.evaluation.report_builder import build_structured_report
 from src.tools.sales_tools import SalesAnalysisTools
@@ -8,9 +10,15 @@ class InvestigationAgent:
     def __init__(self, llm_provider):
         self.llm_provider = llm_provider
 
-    def investigate(self, anomaly_description, data, extra_evidence=None):
+    def investigate(self, anomaly_description, data, extra_evidence=None, comparison_periods=None):
         tools = SalesAnalysisTools(data)
-        periods = self._get_periods(anomaly_description, data, extra_evidence)
+        if comparison_periods is not None:
+            available = set(data["data"].dt.to_period("M").astype(str))
+            if len(comparison_periods) != 2 or any(period not in available for period in comparison_periods) or comparison_periods[0] >= comparison_periods[1]:
+                raise ValueError("Informe dois meses disponíveis, com a referência anterior ao mês analisado.")
+            periods = list(comparison_periods)
+        else:
+            periods = self._get_periods(anomaly_description, data, extra_evidence)
 
         tools.run("faturamento_total")
         tools.run("quantidade_vendida")
@@ -42,7 +50,7 @@ class InvestigationAgent:
                     periodo_atual=current_period).result
 
             drivers = []
-            for dimension in ["produto", "categoria", "regiao", "vendedor"]:
+            for dimension in available_dimensions(data):
                 result = tools.run(
                     "comparar_periodos_por_dimensao",
                     periodo_anterior=previous_period,
@@ -58,9 +66,14 @@ class InvestigationAgent:
                 reverse=total_change > 0,
             )[:8]
         else:
-            tools.run("vendas_por_produto")
-            tools.run("vendas_por_categoria")
-            tools.run("vendas_por_regiao")
+            summary_tools = {
+                "produto": "vendas_por_produto",
+                "categoria": "vendas_por_categoria",
+                "regiao": "vendas_por_regiao",
+            }
+            for dimension in available_dimensions(data):
+                if dimension in summary_tools:
+                    tools.run(summary_tools[dimension])
             evidence["message"] = (
                 "Nao foi possivel identificar dois periodos na descricao da anomalia."
             )
@@ -149,7 +162,7 @@ def conclusion_request(anomaly_description, evidence, structured_report):
     )
     user_prompt = (
         "Investigue a anomalia descrita e gere uma conclusao curta, baseada apenas nos resultados das ferramentas.\n"
-        f"Anomalia: {anomaly_description}"
+        f"Anomalia: {shorten_description(anomaly_description)}"
     )
-    context = {**evidence, "structured_report": structured_report}
+    context = build_conclusion_context(evidence, structured_report)
     return system_prompt, user_prompt, context

@@ -5,6 +5,8 @@ import math
 import altair as alt
 import pandas as pd
 
+from src.formatting import currency_axis_label, currency_symbol, format_currency
+
 
 TEAL = "#14B8A6"
 RED = "#F06472"
@@ -29,8 +31,8 @@ def _br_number(value, decimals=2):
     return f"{number:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def _money(value):
-    return f"R$ {_br_number(value)}" if _number(value) is not None else "—"
+def _money(value, context=None):
+    return format_currency(value, context)
 
 
 def _percent(value):
@@ -103,14 +105,16 @@ def _calendar_frame(frame):
     return frame
 
 
-def trend_chart(monthly, metric="faturamento"):
+def trend_chart(monthly, metric="faturamento", context=None):
     """Show monthly values and flag only periods marked by the detector."""
     frame = _calendar_frame(_monthly_frame(monthly))
+    currency_context = monthly if context is None else context
     quantity = metric == "quantidade"
     value_title = "Quantidade vendida" if quantity else "Faturamento"
-    axis_title = "Unidades vendidas" if quantity else "Faturamento (R$)"
+    axis_title = "Unidades vendidas" if quantity else currency_axis_label(currency_context)
     frame["valor_formatado"] = frame["valor"].map(
-        (lambda value: f"{_br_number(value, 0)} unidades") if quantity else _money
+        (lambda value: f"{_br_number(value, 0)} unidades")
+        if quantity else (lambda value: _money(value, currency_context))
     )
     frame["variacao_formatada"] = [
         _percent(value) if comparable else "Sem comparação mensal"
@@ -163,22 +167,23 @@ def change_chart(monthly):
     return _styled(bars + zero)
 
 
-def contribution_chart(frame, previous_label, current_label):
+def contribution_chart(frame, previous_label, current_label, context=None):
     """Compare revenue changes within one selected dimension.
 
     The caller supplies segments from a single dimension, avoiding sums across
     overlapping products, categories, sellers and regions.
     """
     data = pd.DataFrame(frame).copy()
+    currency_context = frame if context is None else context
     for name in ("segmento", "variacao_faturamento", "faturamento_anterior", "faturamento_atual"):
         if name not in data:
             data[name] = pd.Series(dtype="str" if name == "segmento" else "float64")
     data["segmento"] = data["segmento"].fillna("Sem identificação").astype(str)
     for name in ("variacao_faturamento", "faturamento_anterior", "faturamento_atual"):
         data[name] = pd.to_numeric(data[name], errors="coerce")
-        data[f"{name}_formatado"] = data[name].map(_money)
+        data[f"{name}_formatado"] = data[name].map(lambda value: _money(value, currency_context))
     bars = alt.Chart(data).mark_bar(cornerRadius=3).encode(
-        x=alt.X("variacao_faturamento:Q", title="Variação do faturamento (R$)",
+        x=alt.X("variacao_faturamento:Q", title=f"Variação do faturamento ({currency_symbol(currency_context)})",
                 scale=alt.Scale(zero=True), axis=alt.Axis(format="~s")),
         y=alt.Y("segmento:N", title=None, sort=data["segmento"].tolist(),
                 axis=alt.Axis(grid=False, labelLimit=160)),
@@ -194,9 +199,10 @@ def contribution_chart(frame, previous_label, current_label):
     return _styled(bars + zero)
 
 
-def comparison_chart(comparison):
+def comparison_chart(comparison, context=None):
     """Show previous/current revenue from a report or its comparison section."""
     comparison = comparison or {}
+    currency_context = comparison if context is None else context
     summary = comparison.get("resumo_comparativo", comparison)
     periods = comparison.get("periodos", comparison)
     previous = summary.get("faturamento_anterior", summary.get("valor_anterior"))
@@ -207,11 +213,11 @@ def comparison_chart(comparison):
         {"papel": "Referência", "periodo": _period_label(previous_label), "valor": _number(previous)},
         {"papel": "Em análise", "periodo": _period_label(current_label), "valor": _number(current)},
     ])
-    data["valor_formatado"] = data["valor"].map(_money)
+    data["valor_formatado"] = data["valor"].map(lambda value: _money(value, currency_context))
     base = alt.Chart(data).encode(
         x=alt.X("papel:N", sort=["Referência", "Em análise"], title=None,
                 axis=alt.Axis(labelAngle=0, grid=False)),
-        y=alt.Y("valor:Q", title="Faturamento (R$)", scale=alt.Scale(zero=True),
+        y=alt.Y("valor:Q", title=currency_axis_label(currency_context), scale=alt.Scale(zero=True),
                 axis=alt.Axis(format="~s")),
         tooltip=[alt.Tooltip("periodo:N", title="Período"),
                  alt.Tooltip("valor_formatado:N", title="Faturamento")],

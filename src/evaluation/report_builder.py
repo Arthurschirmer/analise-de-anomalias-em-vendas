@@ -1,4 +1,5 @@
 from src.analysis.cause_ranker import rank_probable_causes
+from src.data.capabilities import SALES_DIMENSIONS, available_dimensions, dataset_metadata
 
 
 def build_structured_report(anomaly_description, evidence, tool_results):
@@ -30,6 +31,8 @@ def build_structured_report(anomaly_description, evidence, tool_results):
             report["limitacoes"].extend(evidence[key].get("limitations", []))
     if evidence.get("dataset_context"):
         report["contexto_da_base"] = dict(evidence["dataset_context"])
+    if dataset_metadata(evidence).get("discount_available") is False and comparison:
+        report["resumo_comparativo"]["variacao_desconto_medio"] = None
 
     return report
 
@@ -82,6 +85,13 @@ def _infer_anomaly_type(comparison):
 
 def _build_limitations(evidence, probable_causes):
     limitations = list(evidence.get("dataset_context", {}).get("limitations", []))
+    dimensions = available_dimensions(evidence)
+    unavailable = [dimension for dimension in SALES_DIMENSIONS if dimension not in dimensions]
+    if unavailable:
+        limitations.append(
+            "Dimensoes indisponiveis na fonte ficam fora da investigacao e do ranking: "
+            + ", ".join(unavailable) + ". Colunas de preenchimento nao permitem analisar esses grupos."
+        )
 
     if not evidence.get("period_comparison"):
         limitations.append(

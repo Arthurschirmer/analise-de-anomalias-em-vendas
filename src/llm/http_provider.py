@@ -1,11 +1,15 @@
 import json
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 
 from src.llm.provider import LLMProvider
 
 
 class HTTPChatLLMProvider(LLMProvider):
+    CONCLUSION_MAX_COMPLETION_TOKENS = 1536
+    PLAN_MAX_COMPLETION_TOKENS = 1024
+
     def __init__(self, api_base_url, api_key, model):
         self.api_base_url = api_base_url
         self.api_key = api_key
@@ -20,15 +24,16 @@ class HTTPChatLLMProvider(LLMProvider):
                 {"role": "system", "content": system_prompt},
                 {
                     "role": "user",
-                    "content": f"{user_prompt}\n\nEvidencias em JSON:\n{json.dumps(context, ensure_ascii=False, indent=2)}",
+                    "content": f"{user_prompt}\n\nEvidencias em JSON:\n{json.dumps(context, ensure_ascii=False, separators=(',', ':'))}",
                 },
             ],
+            **self._completion_options(self.CONCLUSION_MAX_COMPLETION_TOKENS),
         }
 
         response_data = self._post_chat_completion(payload)
         self.last_usage = response_data.get("usage")
 
-        return response_data["choices"][0]["message"]["content"]
+        return self._response_content(response_data)
 
     def interpret_query(self, question, dataset_context):
         system_prompt = (
@@ -44,6 +49,7 @@ class HTTPChatLLMProvider(LLMProvider):
         user_content = json.dumps(
             {"pergunta": question, "contexto_da_base": dataset_context},
             ensure_ascii=False,
+            separators=(",", ":"),
         )
         payload = {
             "model": self.model,
@@ -51,10 +57,11 @@ class HTTPChatLLMProvider(LLMProvider):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_content},
             ],
+            **self._completion_options(self.PLAN_MAX_COMPLETION_TOKENS),
         }
         response_data = self._post_chat_completion(payload)
 
-        content = response_data["choices"][0]["message"]["content"].strip()
+        content = self._response_content(response_data)
         if content.startswith("```"):
             content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
         try:
@@ -69,6 +76,28 @@ class HTTPChatLLMProvider(LLMProvider):
             except json.JSONDecodeError:
                 return None
         return plan if isinstance(plan, dict) else None
+
+    def _completion_options(self, completion_tokens):
+        # Keep optional provider-specific fields out of other compatible APIs.
+        if urlsplit(self.api_base_url).hostname != "api.groq.com":
+            return {}
+        options = {"max_completion_tokens": completion_tokens}
+        if self.model in {"openai/gpt-oss-20b", "openai/gpt-oss-120b"}:
+            # This task explains precomputed evidence; reserve room for the final
+            # text without requesting the model's more expensive reasoning modes.
+            options["reasoning_effort"] = "low"
+        return options
+
+    @staticmethod
+    def _response_content(response_data):
+        choices = response_data.get("choices") or []
+        choice = choices[0] if choices else {}
+        content = (choice.get("message") or {}).get("content")
+        if choice.get("finish_reason") == "length":
+            raise RuntimeError("A IA devolveu uma resposta incompleta. A explicação não foi utilizada.")
+        if not isinstance(content, str) or not content.strip():
+            raise RuntimeError("A API de IA devolveu uma resposta sem texto.")
+        return content.strip()
 
     def _post_chat_completion(self, payload):
         request = urllib.request.Request(

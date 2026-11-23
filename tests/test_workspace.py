@@ -146,8 +146,10 @@ class WorkspaceTest(unittest.TestCase):
         self.assert_no_exceptions(app)
         self.assertEqual(len(app.error), 0)
         self.assertTrue(any("Precisamos de dois períodos" in item.value for item in app.info))
-        self.assertEqual(next(item.value for item in app.metric if item.label == "Variações sinalizadas"), "0")
+        self.assertFalse(any(item.label == "Variações sinalizadas" for item in app.metric))
         self.assertIsNone(app.session_state["last_investigation"])
+        self.navigate(app, "Painel")
+        self.assertEqual(next(item.value for item in app.metric if item.label == "Variações sinalizadas"), "0")
 
     def test_chat_investigation_persists_readable_report_without_duplicate_widgets(self):
         app = self.app()
